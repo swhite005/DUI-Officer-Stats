@@ -215,6 +215,13 @@ input:focus, select:focus, textarea:focus {
 .osd-item mark { background: #fef3c7; color: var(--text); font-style: normal; border-radius: 2px; }
 .osd-none { padding: 14px; font-size: 14px; color: var(--muted); }
 
+/* Remove iOS search field decoration */
+input[type="search"] { -webkit-appearance: none; appearance: none; }
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration { display: none; }
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    CHOICES.JS OVERRIDES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -840,6 +847,13 @@ function buildOfficerSearch(inputId, dropdownId, names, onSelect) {
   if (!input || !dropdown) return null;
   var selected = '';
 
+  // iOS keyboard: these attributes are critical
+  input.setAttribute('inputmode', 'text');
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('autocapitalize', 'none');
+  input.setAttribute('spellcheck', 'false');
+  input.setAttribute('type', 'search');   // 'search' type dismisses keyboard on done
+
   function normalize(s) { return s.toLowerCase().replace(/[.,]/g, ''); }
 
   function renderDropdown(query) {
@@ -862,14 +876,15 @@ function buildOfficerSearch(inputId, dropdownId, names, onSelect) {
       }).join('');
     }
     dropdown.style.display = 'block';
-    // Touch + click handlers
+
+    // Use touchend (not touchstart) for item selection so iOS doesn't fight focus
     dropdown.querySelectorAll('.osd-item').forEach(function(item) {
-      item.addEventListener('touchstart', function(e) {
+      item.addEventListener('touchend', function(e) {
         e.preventDefault();
         selectVal(this.getAttribute('data-value'));
-      }, { passive: false });
+      });
       item.addEventListener('mousedown', function(e) {
-        e.preventDefault();
+        e.preventDefault(); // prevent blur on input before we read the value
         selectVal(this.getAttribute('data-value'));
       });
     });
@@ -880,30 +895,45 @@ function buildOfficerSearch(inputId, dropdownId, names, onSelect) {
     input.value = val || '';
     dropdown.style.display = 'none';
     input.style.borderColor = val ? 'var(--navy)' : '';
+    input.blur(); // dismiss keyboard after selection
     if (onSelect) onSelect(val);
   }
 
   function closeDropdown() {
     dropdown.style.display = 'none';
-    // If input text doesn't match selection, clear
     if (selected && input.value !== selected) { selected = ''; input.value = ''; }
   }
 
+  // Explicitly focus input on touchstart so iOS opens keyboard immediately
+  input.addEventListener('touchstart', function() {
+    this.focus();
+  }, { passive: true });
+
   input.addEventListener('input', function() { selected = ''; renderDropdown(this.value); });
   input.addEventListener('focus', function() { renderDropdown(this.value); });
-  input.addEventListener('blur',  function() { setTimeout(closeDropdown, 200); });
+  input.addEventListener('blur',  function() { setTimeout(closeDropdown, 250); });
   input.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeDropdown();
-    if (e.key === 'Enter') {
+    if (e.key === 'Escape' || e.key === 'Enter') {
       var first = dropdown.querySelector('.osd-item');
-      if (first) { e.preventDefault(); selectVal(first.getAttribute('data-value')); }
+      if (e.key === 'Enter' && first) { e.preventDefault(); selectVal(first.getAttribute('data-value')); }
+      else closeDropdown();
     }
   });
 
   return {
     getValue: function() { return selected; },
-    setValue: function(val) { selectVal(val || ''); },
-    clear:    function() { selectVal(''); }
+    setValue: function(val) {
+      selected = val || '';
+      input.value = val || '';
+      input.style.borderColor = val ? 'var(--navy)' : '';
+      dropdown.style.display = 'none';
+    },
+    clear: function() {
+      selected = '';
+      input.value = '';
+      input.style.borderColor = '';
+      dropdown.style.display = 'none';
+    }
   };
 }
 
