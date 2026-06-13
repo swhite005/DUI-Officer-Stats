@@ -215,13 +215,6 @@ input:focus, select:focus, textarea:focus {
 .osd-item mark { background: #fef3c7; color: var(--text); font-style: normal; border-radius: 2px; }
 .osd-none { padding: 14px; font-size: 14px; color: var(--muted); }
 
-/* Remove iOS search field decoration */
-input[type="search"] { -webkit-appearance: none; appearance: none; }
-input[type="search"]::-webkit-search-decoration,
-input[type="search"]::-webkit-search-cancel-button,
-input[type="search"]::-webkit-search-results-button,
-input[type="search"]::-webkit-search-results-decoration { display: none; }
-
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    CHOICES.JS OVERRIDES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -517,7 +510,7 @@ input[type="search"]::-webkit-search-results-decoration { display: none; }
       <div class="field">
         <label class="field-label">Officer <span class="req">*</span></label>
         <div class="osd-wrap">
-          <input type="text" id="officerInput" autocomplete="off" placeholder="Type any part of name...">
+          <input type="text" id="officerInput" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="Type any part of name...">
           <div class="osd-dropdown" id="officerDropdown"></div>
         </div>
         <div class="field-error" id="officerError">Please select a valid officer.</div>
@@ -655,7 +648,7 @@ input[type="search"]::-webkit-search-results-decoration { display: none; }
         <div class="field">
           <label class="field-label">Officer <span class="req">*</span></label>
           <div class="osd-wrap">
-            <input type="text" id="editOfficerInput" autocomplete="off" placeholder="Type any part of name...">
+            <input type="text" id="editOfficerInput" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="Type any part of name...">
             <div class="osd-dropdown" id="editOfficerDropdown"></div>
           </div>
         </div>
@@ -841,50 +834,42 @@ function loadOfficers() {
 function buildChoices(selectId, names, existing) { /* legacy no-op */ }
 
 // Custom officer search — matches any part of name (first, last, initials)
+// iOS-safe: zero touch event manipulation — let the browser handle focus/keyboard natively
 function buildOfficerSearch(inputId, dropdownId, names, onSelect) {
   var input    = document.getElementById(inputId);
   var dropdown = document.getElementById(dropdownId);
   if (!input || !dropdown) return null;
   var selected = '';
 
-  // iOS keyboard: these attributes are critical
-  input.setAttribute('inputmode', 'text');
-  input.setAttribute('autocorrect', 'off');
-  input.setAttribute('autocapitalize', 'none');
-  input.setAttribute('spellcheck', 'false');
-  input.setAttribute('type', 'search');   // 'search' type dismisses keyboard on done
-
-  function normalize(s) { return s.toLowerCase().replace(/[.,]/g, ''); }
+  function normalize(s) { return (s || '').toLowerCase().replace(/[.,\s]/g, ''); }
 
   function renderDropdown(query) {
     var q = normalize(query);
-    var matches = q.length === 0 ? names : names.filter(function(n) {
-      return normalize(n).indexOf(q) !== -1;
+    var matches = !query.trim() ? [] : names.filter(function(n) {
+      // Match anywhere in name — normalized (removes spaces, dots, commas)
+      // Also try matching raw so "Van H" finds "VAN HOLT"
+      return normalize(n).indexOf(q) !== -1 ||
+             n.toLowerCase().indexOf(query.toLowerCase().trim()) !== -1;
     });
     if (!matches.length) {
-      dropdown.innerHTML = '<div class="osd-none">No officer found</div>';
-    } else {
-      dropdown.innerHTML = matches.slice(0, 40).map(function(n) {
-        var hi = n;
-        if (q) {
-          var ni = normalize(n), idx = ni.indexOf(q);
-          hi = esc(n.slice(0, idx)) +
-               '<mark>' + esc(n.slice(idx, idx + q.length)) + '</mark>' +
-               esc(n.slice(idx + q.length));
-        } else { hi = esc(n); }
-        return '<div class="osd-item" data-value="' + esc(n) + '">' + hi + '</div>';
-      }).join('');
+      dropdown.innerHTML = query.trim() ? '<div class="osd-none">No officer found</div>' : '';
+      dropdown.style.display = matches.length || query.trim() ? 'block' : 'none';
+      return;
     }
+    dropdown.innerHTML = matches.slice(0, 40).map(function(n) {
+      return '<div class="osd-item" data-value="' + esc(n) + '">' + esc(n) + '</div>';
+    }).join('');
     dropdown.style.display = 'block';
 
-    // Use touchend (not touchstart) for item selection so iOS doesn't fight focus
     dropdown.querySelectorAll('.osd-item').forEach(function(item) {
-      item.addEventListener('touchend', function(e) {
+      // mousedown fires before blur — prevents dropdown closing before selection
+      item.addEventListener('mousedown', function(e) {
         e.preventDefault();
         selectVal(this.getAttribute('data-value'));
       });
-      item.addEventListener('mousedown', function(e) {
-        e.preventDefault(); // prevent blur on input before we read the value
+      // touchend for mobile tap
+      item.addEventListener('touchend', function(e) {
+        e.preventDefault();
         selectVal(this.getAttribute('data-value'));
       });
     });
@@ -894,46 +879,40 @@ function buildOfficerSearch(inputId, dropdownId, names, onSelect) {
     selected = val || '';
     input.value = val || '';
     dropdown.style.display = 'none';
+    dropdown.innerHTML = '';
     input.style.borderColor = val ? 'var(--navy)' : '';
-    input.blur(); // dismiss keyboard after selection
     if (onSelect) onSelect(val);
   }
 
   function closeDropdown() {
-    dropdown.style.display = 'none';
-    if (selected && input.value !== selected) { selected = ''; input.value = ''; }
+    // Only close if focus has truly left both input and dropdown
+    setTimeout(function() {
+      if (document.activeElement !== input &&
+          !dropdown.contains(document.activeElement)) {
+        dropdown.style.display = 'none';
+        // Clear if text doesn't match a valid selection
+        if (input.value && input.value !== selected) {
+          selected = '';
+          input.value = '';
+        }
+      }
+    }, 200);
   }
 
-  // Explicitly focus input on touchstart so iOS opens keyboard immediately
-  input.addEventListener('touchstart', function() {
-    this.focus();
-  }, { passive: true });
-
-  input.addEventListener('input', function() { selected = ''; renderDropdown(this.value); });
-  input.addEventListener('focus', function() { renderDropdown(this.value); });
-  input.addEventListener('blur',  function() { setTimeout(closeDropdown, 250); });
-  input.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' || e.key === 'Enter') {
-      var first = dropdown.querySelector('.osd-item');
-      if (e.key === 'Enter' && first) { e.preventDefault(); selectVal(first.getAttribute('data-value')); }
-      else closeDropdown();
-    }
+  // Plain event listeners — no touch manipulation
+  input.addEventListener('input', function() {
+    selected = '';
+    renderDropdown(this.value);
   });
+  input.addEventListener('focus', function() {
+    if (this.value) renderDropdown(this.value);
+  });
+  input.addEventListener('blur', closeDropdown);
 
   return {
     getValue: function() { return selected; },
-    setValue: function(val) {
-      selected = val || '';
-      input.value = val || '';
-      input.style.borderColor = val ? 'var(--navy)' : '';
-      dropdown.style.display = 'none';
-    },
-    clear: function() {
-      selected = '';
-      input.value = '';
-      input.style.borderColor = '';
-      dropdown.style.display = 'none';
-    }
+    setValue: function(val) { selectVal(val || ''); },
+    clear:    function() { selectVal(''); }
   };
 }
 
