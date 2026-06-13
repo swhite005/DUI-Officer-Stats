@@ -733,6 +733,14 @@ input:focus, select:focus, textarea:focus {
           <button type="button" class="btn btn-danger" id="editDeleteBtn">Delete Record</button>
           <button type="button" class="btn btn-secondary" onclick="closeSheet()">Cancel</button>
         </div>
+        <!-- Inline delete confirmation — shown instead of browser confirm() -->
+        <div id="deleteConfirmBar" style="display:none;margin-top:12px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:10px;padding:14px 16px;">
+          <div style="font-size:14px;font-weight:600;color:#dc2626;margin-bottom:10px;">Delete this record? This cannot be undone.</div>
+          <div style="display:flex;gap:10px;">
+            <button type="button" class="btn btn-danger" id="deleteConfirmYes" style="flex:1;">Yes, Delete</button>
+            <button type="button" class="btn btn-secondary" id="deleteConfirmNo" style="flex:1;">Cancel</button>
+          </div>
+        </div>
       </form>
     </div>
   </div>
@@ -1126,8 +1134,17 @@ function openEditSheet(rowIndex) {
     cb.closest('.stat-check').classList.toggle('checked', on);
   });
 
-  // delete button
-  document.getElementById('editDeleteBtn').onclick = function(){ confirmDelete(rowIndex); };
+  // Delete button — show inline confirm bar, no popup
+  var deleteBar = document.getElementById('deleteConfirmBar');
+  var deleteYes  = document.getElementById('deleteConfirmYes');
+  var deleteNo   = document.getElementById('deleteConfirmNo');
+  deleteBar.style.display = 'none';
+  document.getElementById('editDeleteBtn').onclick = function() {
+    deleteBar.style.display = 'block';
+    deleteBar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+  deleteNo.onclick = function() { deleteBar.style.display = 'none'; };
+  deleteYes.onclick = function() { doDelete(rowIndex); };
 
   document.getElementById('editSheet').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -1169,8 +1186,9 @@ function saveEdit(e) {
   });
 }
 
-function confirmDelete(rowIndex) {
-  if (!confirm('Delete this record? This cannot be undone.')) return;
+function doDelete(rowIndex) {
+  var deleteYes = document.getElementById('deleteConfirmYes');
+  if (deleteYes) { deleteYes.disabled = true; deleteYes.textContent = 'Deleting...'; }
   apiPost('deleteRecord', { rowIndex: rowIndex }).then(function(res) {
     if (!res.ok) { toast('Error: ' + (res.error || 'Unknown'), 'err'); return; }
     toast('Record deleted.', 'ok');
