@@ -516,9 +516,10 @@ input:focus, select:focus, textarea:focus {
         <div class="field-error" id="officerError">Please select a valid officer.</div>
       </div>
 
+
       <div class="field">
         <label class="field-label">Type of Activity <span class="req">*</span></label>
-        <select id="activityType" required>
+        <select id="activityType" onchange="toggleOtherMobile(this,'otherActivityWrap')" required>
           <option value="">Select type...</option>
           <option>Traffic Stop</option>
           <option>Directed Patrol</option>
@@ -530,17 +531,17 @@ input:focus, select:focus, textarea:focus {
           <option>Flag Down</option>
           <option>DUI Being Followed</option>
           <option>Call for Service</option>
+          <option value="Other">Other...</option>
         </select>
+        <div id="otherActivityWrap" style="display:none;margin-top:8px;">
+          <input type="text" id="otherActivity" placeholder="Describe activity type...">
+        </div>
       </div>
 
       <div class="field-row" style="margin-bottom:14px;">
         <div class="field" style="margin-bottom:0;">
           <label class="field-label">Date <span class="req">*</span></label>
           <input type="date" id="date" required>
-        </div>
-        <div class="field" style="margin-bottom:0;">
-          <label class="field-label">Cite / DR / CN #</label>
-          <input type="text" id="citeDrCn" placeholder="HB 3183564">
         </div>
       </div>
 
@@ -553,6 +554,11 @@ input:focus, select:focus, textarea:focus {
           <label class="field-label">Time Completed</label>
           <input type="time" id="timeCompleted">
         </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Cite / DR / CN #</label>
+        <input type="text" id="citeDrCn" placeholder="HB 3183564" autocomplete="off">
       </div>
 
       <div class="field">
@@ -605,17 +611,22 @@ input:focus, select:focus, textarea:focus {
     </select>
     <select id="recStatsFilter" onchange="filterRecords()">
       <option value="">All Stats</option>
+      <option value="SFSTs Conducted">SFSTs Conducted</option>
       <option value="DUI Alcohol">DUI Alcohol</option>
       <option value="DUI Drugs">DUI Drugs</option>
-      <option value="SFSTs Conducted">SFSTs Conducted</option>
+      <option value="PCF Citation">PCF Citation</option>
+      <option value="Cell Phone Citation">Cell Phone Citation</option>
+      <option value="Other Citation">Other Citation</option>
       <option value="Criminal Arrests">Criminal Arrests</option>
+      <option value="Drug Arrests">Drug Arrests</option>
+      <option value="Other Arrest">Other Arrest</option>
+      <option value="Suspended Revoked Driver's Licenses">Susp/Rev DL</option>
+      <option value="Recovered Stolen Vehicle">Rcvrd Stolen Veh</option>
     </select>
   </div>
   <div id="recordsList"></div>
   <div class="load-more-wrap" id="loadMoreWrap" style="display:none;">
     <button class="btn btn-secondary btn-sm" onclick="showMoreRecords()" style="width:auto;padding:0 24px;">Load more</button>
-  </div>
-</div>
 
 <!-- ══════════════════════════════════════════════════
      BOTTOM TAB BAR
@@ -1018,6 +1029,16 @@ function dispositionBadge(d) {
 }
 
 // ════════════════════════════════════════════════════════
+// ACTIVITY TYPE OTHER TOGGLE
+// ════════════════════════════════════════════════════════
+function toggleOtherMobile(sel, wrapId) {
+  var wrap = document.getElementById(wrapId);
+  wrap.style.display = sel.value === 'Other' ? 'block' : 'none';
+  var txt = wrap.querySelector('input[type="text"]');
+  if (txt) txt.required = sel.value === 'Other';
+}
+
+// ════════════════════════════════════════════════════════
 // SUBMIT NEW ENTRY
 // ════════════════════════════════════════════════════════
 function submitEntry(e) {
@@ -1030,9 +1051,14 @@ function submitEntry(e) {
   if (statsChecked === 0) { showErr('statsError'); return; }
   hideErr('statsError');
 
+  var actSel = document.getElementById('activityType').value;
+  var activityType = actSel === 'Other'
+    ? (document.getElementById('otherActivity').value.trim() || 'Other')
+    : actSel;
+
   var formData = {
     officer:       officer,
-    activityType:  document.getElementById('activityType').value,
+    activityType:  activityType,
     date:          document.getElementById('date').value,
     timeStarted:   document.getElementById('timeStarted').value,
     timeCompleted: document.getElementById('timeCompleted').value,
@@ -1058,6 +1084,8 @@ function submitEntry(e) {
 function resetForm() {
   document.getElementById('entryForm').reset();
   document.getElementById('date').value = todayISO();
+  var wrap = document.getElementById('otherActivityWrap');
+  if (wrap) wrap.style.display = 'none';
   document.querySelectorAll('#statsGrid .stat-check').forEach(function(l){ l.classList.remove('checked'); });
   hideErr('officerError'); hideErr('statsError');
   if (officerChoices) officerChoices.clear();
