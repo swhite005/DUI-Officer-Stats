@@ -733,15 +733,15 @@ input:focus, select:focus, textarea:focus {
           <button type="button" class="btn btn-danger" id="editDeleteBtn">Delete Record</button>
           <button type="button" class="btn btn-secondary" onclick="closeSheet()">Cancel</button>
         </div>
-        <!-- Inline delete confirmation — shown instead of browser confirm() -->
-        <div id="deleteConfirmBar" style="display:none;margin-top:12px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:10px;padding:14px 16px;">
-          <div style="font-size:14px;font-weight:600;color:#dc2626;margin-bottom:10px;">Delete this record? This cannot be undone.</div>
-          <div style="display:flex;gap:10px;">
-            <button type="button" class="btn btn-danger" id="deleteConfirmYes" style="flex:1;">Yes, Delete</button>
-            <button type="button" class="btn btn-secondary" id="deleteConfirmNo" style="flex:1;">Cancel</button>
-          </div>
-        </div>
       </form>
+      <!-- Inline delete confirmation — outside form so buttons don't trigger submit -->
+      <div id="deleteConfirmBar" style="display:none;margin-top:4px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:14px;font-weight:600;color:#dc2626;margin-bottom:10px;">Delete this record? This cannot be undone.</div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-danger" id="deleteConfirmYes" style="flex:1;" onclick="doDeleteConfirmed()">Yes, Delete</button>
+          <button class="btn btn-secondary" id="deleteConfirmNo" style="flex:1;" onclick="document.getElementById('deleteConfirmBar').style.display='none'">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1134,17 +1134,17 @@ function openEditSheet(rowIndex) {
     cb.closest('.stat-check').classList.toggle('checked', on);
   });
 
-  // Delete button — show inline confirm bar, no popup
+  // Delete button — store rowIndex globally, show confirm bar
+  window._pendingDeleteRow = rowIndex;
   var deleteBar = document.getElementById('deleteConfirmBar');
-  var deleteYes  = document.getElementById('deleteConfirmYes');
-  var deleteNo   = document.getElementById('deleteConfirmNo');
   deleteBar.style.display = 'none';
+  var deleteYes = document.getElementById('deleteConfirmYes');
+  deleteYes.disabled = false;
+  deleteYes.textContent = 'Yes, Delete';
   document.getElementById('editDeleteBtn').onclick = function() {
     deleteBar.style.display = 'block';
     deleteBar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
-  deleteNo.onclick = function() { deleteBar.style.display = 'none'; };
-  deleteYes.onclick = function() { doDelete(rowIndex); };
 
   document.getElementById('editSheet').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -1186,15 +1186,25 @@ function saveEdit(e) {
   });
 }
 
-function doDelete(rowIndex) {
-  var deleteYes = document.getElementById('deleteConfirmYes');
-  if (deleteYes) { deleteYes.disabled = true; deleteYes.textContent = 'Deleting...'; }
-  apiPost('deleteRecord', { rowIndex: rowIndex }).then(function(res) {
-    if (!res.ok) { toast('Error: ' + (res.error || 'Unknown'), 'err'); return; }
+function doDeleteConfirmed() {
+  var rowIndex = window._pendingDeleteRow;
+  if (!rowIndex) { toast('No record selected', 'err'); return; }
+  var btn = document.getElementById('deleteConfirmYes');
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
+  // Use JSONP (same as reads) — avoids fetch POST issues on this browser
+  apiGet('deleteRecord', { rowIndex: rowIndex }).then(function(res) {
+    if (!res.ok) { toast('Error: ' + (res.error || 'Unknown'), 'err');
+      if (btn) { btn.disabled = false; btn.textContent = 'Yes, Delete'; }
+      return;
+    }
+    window._pendingDeleteRow = null;
     toast('Record deleted.', 'ok');
     closeSheet();
     loadRecords();
-  }).catch(function() { toast('Delete failed.', 'err'); });
+  }).catch(function() {
+    toast('Delete failed.', 'err');
+    if (btn) { btn.disabled = false; btn.textContent = 'Yes, Delete'; }
+  });
 }
 
 // ════════════════════════════════════════════════════════
