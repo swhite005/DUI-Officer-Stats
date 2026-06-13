@@ -184,6 +184,38 @@ input:focus, select:focus, textarea:focus {
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   OFFICER SEARCH DROPDOWN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.osd-wrap { position: relative; }
+.osd-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 2px); left: 0; right: 0;
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 9999;
+  -webkit-overflow-scrolling: touch;
+}
+.osd-item {
+  padding: 14px 14px;
+  font-size: 15px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+}
+.osd-item:last-child { border-bottom: none; }
+.osd-item:active { background: #eef0f7; }
+.osd-item mark { background: #fef3c7; color: var(--text); font-style: normal; border-radius: 2px; }
+.osd-none { padding: 14px; font-size: 14px; color: var(--muted); }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    CHOICES.JS OVERRIDES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .choices { width: 100%; }
@@ -477,7 +509,10 @@ input:focus, select:focus, textarea:focus {
 
       <div class="field">
         <label class="field-label">Officer <span class="req">*</span></label>
-        <select id="officerSelect"></select>
+        <div class="osd-wrap">
+          <input type="text" id="officerInput" autocomplete="off" placeholder="Type any part of name...">
+          <div class="osd-dropdown" id="officerDropdown"></div>
+        </div>
         <div class="field-error" id="officerError">Please select a valid officer.</div>
       </div>
 
@@ -612,7 +647,10 @@ input:focus, select:focus, textarea:focus {
 
         <div class="field">
           <label class="field-label">Officer <span class="req">*</span></label>
-          <select id="editOfficerSelect"></select>
+          <div class="osd-wrap">
+            <input type="text" id="editOfficerInput" autocomplete="off" placeholder="Type any part of name...">
+            <div class="osd-dropdown" id="editOfficerDropdown"></div>
+          </div>
         </div>
         <div class="field">
           <label class="field-label">Type of Activity <span class="req">*</span></label>
@@ -788,29 +826,85 @@ function apiPost(action, body) {
 function loadOfficers() {
   apiGet('getOfficers').then(function(res) {
     officerNames = (res.ok && res.data) ? res.data : [];
-    officerChoices = buildChoices('officerSelect', officerNames, officerChoices);
-    editChoices    = buildChoices('editOfficerSelect', officerNames, editChoices);
+    officerChoices = buildOfficerSearch('officerInput', 'officerDropdown', officerNames, null);
+    editChoices    = buildOfficerSearch('editOfficerInput', 'editOfficerDropdown', officerNames, null);
   }).catch(function(){ /* silent — config may not be set yet */ });
 }
 
-function buildChoices(selectId, names, existing) {
-  if (existing) { try { existing.destroy(); } catch(e){} }
-  var el = document.getElementById(selectId);
-  el.innerHTML = '<option value="">Type last name...</option>';
-  names.forEach(function(n) {
-    var opt = document.createElement('option');
-    opt.value = n; opt.textContent = n;
-    el.appendChild(opt);
+function buildChoices(selectId, names, existing) { /* legacy no-op */ }
+
+// Custom officer search — matches any part of name (first, last, initials)
+function buildOfficerSearch(inputId, dropdownId, names, onSelect) {
+  var input    = document.getElementById(inputId);
+  var dropdown = document.getElementById(dropdownId);
+  if (!input || !dropdown) return null;
+  var selected = '';
+
+  function normalize(s) { return s.toLowerCase().replace(/[.,]/g, ''); }
+
+  function renderDropdown(query) {
+    var q = normalize(query);
+    var matches = q.length === 0 ? names : names.filter(function(n) {
+      return normalize(n).indexOf(q) !== -1;
+    });
+    if (!matches.length) {
+      dropdown.innerHTML = '<div class="osd-none">No officer found</div>';
+    } else {
+      dropdown.innerHTML = matches.slice(0, 40).map(function(n) {
+        var hi = n;
+        if (q) {
+          var ni = normalize(n), idx = ni.indexOf(q);
+          hi = esc(n.slice(0, idx)) +
+               '<mark>' + esc(n.slice(idx, idx + q.length)) + '</mark>' +
+               esc(n.slice(idx + q.length));
+        } else { hi = esc(n); }
+        return '<div class="osd-item" data-value="' + esc(n) + '">' + hi + '</div>';
+      }).join('');
+    }
+    dropdown.style.display = 'block';
+    // Touch + click handlers
+    dropdown.querySelectorAll('.osd-item').forEach(function(item) {
+      item.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        selectVal(this.getAttribute('data-value'));
+      }, { passive: false });
+      item.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        selectVal(this.getAttribute('data-value'));
+      });
+    });
+  }
+
+  function selectVal(val) {
+    selected = val || '';
+    input.value = val || '';
+    dropdown.style.display = 'none';
+    input.style.borderColor = val ? 'var(--navy)' : '';
+    if (onSelect) onSelect(val);
+  }
+
+  function closeDropdown() {
+    dropdown.style.display = 'none';
+    // If input text doesn't match selection, clear
+    if (selected && input.value !== selected) { selected = ''; input.value = ''; }
+  }
+
+  input.addEventListener('input', function() { selected = ''; renderDropdown(this.value); });
+  input.addEventListener('focus', function() { renderDropdown(this.value); });
+  input.addEventListener('blur',  function() { setTimeout(closeDropdown, 200); });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeDropdown();
+    if (e.key === 'Enter') {
+      var first = dropdown.querySelector('.osd-item');
+      if (first) { e.preventDefault(); selectVal(first.getAttribute('data-value')); }
+    }
   });
-  return new Choices(el, {
-    searchEnabled: true,
-    shouldSort: false,
-    searchResultLimit: 20,
-    placeholderValue: 'Type last name...',
-    noResultsText: 'No officer found',
-    itemSelectText: '',
-    removeItemButton: false
-  });
+
+  return {
+    getValue: function() { return selected; },
+    setValue: function(val) { selectVal(val || ''); },
+    clear:    function() { selectVal(''); }
+  };
 }
 
 // ════════════════════════════════════════════════════════
@@ -919,7 +1013,7 @@ function dispositionBadge(d) {
 // ════════════════════════════════════════════════════════
 function submitEntry(e) {
   e.preventDefault();
-  var officer = officerChoices ? officerChoices.getValue(true) : '';
+  var officer = officerChoices ? officerChoices.getValue() : '';
   if (!officer) { showErr('officerError'); return; }
   hideErr('officerError');
 
@@ -957,7 +1051,7 @@ function resetForm() {
   document.getElementById('date').value = todayISO();
   document.querySelectorAll('#statsGrid .stat-check').forEach(function(l){ l.classList.remove('checked'); });
   hideErr('officerError'); hideErr('statsError');
-  if (officerChoices) { try { officerChoices.setChoiceByValue(''); } catch(e){} }
+  if (officerChoices) officerChoices.clear();
 }
 
 // ════════════════════════════════════════════════════════
@@ -985,7 +1079,7 @@ function openEditSheet(rowIndex) {
   document.getElementById('editTimeStarted').value   = r.timeStarted   ? to24h(r.timeStarted)   : '';
   document.getElementById('editTimeCompleted').value = r.timeCompleted ? to24h(r.timeCompleted) : '';
 
-  if (editChoices) { try { editChoices.setChoiceByValue(r.officer); } catch(e){} }
+  if (editChoices) editChoices.setValue(r.officer);
 
   document.querySelectorAll('#editStatsGrid input[type="checkbox"]').forEach(function(cb) {
     var on = r.stats.indexOf(cb.value) !== -1;
@@ -1008,7 +1102,7 @@ function closeSheet() {
 function saveEdit(e) {
   e.preventDefault();
   var rowIndex = parseInt(document.getElementById('editRowIndex').value);
-  var officer  = editChoices ? editChoices.getValue(true) : '';
+  var officer  = editChoices ? editChoices.getValue() : '';
   if (!officer) { toast('Please select an officer', 'err'); return; }
 
   var formData = {
